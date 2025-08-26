@@ -1,0 +1,9 @@
+[package]
+name = "freedesktop-a11y-keyboardmonitor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+xkeysym = { version = "0.2.1", features = ["serde"] }
+zbus = { version = "5.10.0", default-features = false, features = ["async-io"] }
