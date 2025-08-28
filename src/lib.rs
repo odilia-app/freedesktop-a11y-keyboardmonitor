@@ -3,7 +3,7 @@
 //! Interface for monitoring of keyboard input by assistive technologies.
 //!
 //! This interface is used by assistive technologies to monitor keyboard input of the compositor.
-//! The compositor is expected to listen on the well-known bus name "org.freedesktop.a11y.Manager" at the object path "/org/freedesktop/a11y/Manager". 
+//! The compositor is expected to listen on the well-known bus name "org.freedesktop.a11y.Manager" at the object path "/org/freedesktop/a11y/Manager".
 //!
 //! ## Security
 //!
@@ -19,23 +19,68 @@
 //! If you fail to do this, the compositor is well within its rights to disregard all messages on this
 //! bus without any further interaction.
 
-use zbus::proxy;
-use xkeysym::Keysym as InnerKeysym;
-use serde::{Serialize, Deserialize};
-use zbus::zvariant::{Type, Signature};
+pub mod state_machine;
 
-#[derive(Serialize, Deserialize, Debug)]
+use serde::{Deserialize, Serialize};
+use xkeysym::Keysym as InnerKeysym;
+use zbus::proxy;
+use zbus::zvariant::{Signature, Type};
+
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Keysym(pub InnerKeysym);
+
+impl Keysym {
+    fn key_char(&self) -> Option<char> {
+        self.0.key_char()
+    }
+}
+
+impl Not for Keysym {
+    type Output = Self;
+    fn not(self) -> Self {
+        Keysym(InnerKeysym::new(!self.0.raw()))
+    }
+}
 
 impl Type for Keysym {
     const SIGNATURE: &'static Signature = u32::SIGNATURE;
 }
 
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ModMask(pub InnerKeysym);
+
+impl ModMask {
+    fn is_empty(&self) -> bool {
+        self.0.raw() == 0
+    }
+}
+
+impl BitAnd<Self> for ModMask {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> ModMask {
+        ModMask((self.0.raw() | rhs.0.raw()).into())
+    }
+}
+impl BitAnd<Keysym> for ModMask {
+    type Output = Self;
+    fn bitand(self, rhs: Keysym) -> ModMask {
+        ModMask((self.0.raw() & rhs.0.raw()).into())
+    }
+}
+impl BitOrAssign<Keysym> for ModMask {
+    fn bitor_assign(&mut self, rhs: Keysym) {
+        *self = ModMask((self.0.raw() | rhs.0.raw()).into())
+    }
+}
+impl BitAndAssign<Keysym> for ModMask {
+    fn bitand_assign(&mut self, rhs: Keysym) {
+        *self = ModMask((self.0.raw() & rhs.0.raw()).into())
+    }
+}
 
 impl Type for ModMask {
     const SIGNATURE: &'static Signature = u32::SIGNATURE;
@@ -44,32 +89,36 @@ impl Type for ModMask {
 #[proxy(
     interface = "org.freedesktop.a11y.KeyboardMonitor",
     default_path = "/org/freedesktop/a11y/Manager",
-    default_service = "org.freedesktop.a11y.Manager",
+    default_service = "org.freedesktop.a11y.Manager"
 )]
 pub trait KeyboardMonitor {
-	/// GrabKeyboard method
-	fn grab_keyboard(&self) -> zbus::Result<()>;
+    /// GrabKeyboard method
+    fn grab_keyboard(&self) -> zbus::Result<()>;
 
-	/// SetKeyGrabs method
-	fn set_key_grabs(&self, modifiers: &[Keysym], keystrokes: &[&(Keysym, ModMask)]) -> zbus::Result<()>;
+    /// SetKeyGrabs method
+    fn set_key_grabs(
+        &self,
+        modifiers: &[Keysym],
+        keystrokes: &[&(Keysym, ModMask)],
+    ) -> zbus::Result<()>;
 
-	/// UngrabKeyboard method
-	fn ungrab_keyboard(&self) -> zbus::Result<()>;
+    /// UngrabKeyboard method
+    fn ungrab_keyboard(&self) -> zbus::Result<()>;
 
-	/// UnwatchKeyboard method
-	fn unwatch_keyboard(&self) -> zbus::Result<()>;
+    /// UnwatchKeyboard method
+    fn unwatch_keyboard(&self) -> zbus::Result<()>;
 
-	/// WatchKeyboard method
-	fn watch_keyboard(&self) -> zbus::Result<()>;
+    /// WatchKeyboard method
+    fn watch_keyboard(&self) -> zbus::Result<()>;
 
-	/// KeyEvent signal
-	#[zbus(signal)]
-	fn key_event(
-		&self,
-		released: bool,
-		state: ModMask,
-		keysym: Keysym,
-		unichar: char,
-		keycode: u16,
-	) -> zbus::Result<()>;
+    /// KeyEvent signal
+    #[zbus(signal)]
+    fn key_event(
+        &self,
+        released: bool,
+        state: ModMask,
+        keysym: Keysym,
+        unichar: char,
+        keycode: u16,
+    ) -> zbus::Result<()>;
 }
