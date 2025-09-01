@@ -20,6 +20,8 @@
 //! bus without any further interaction.
 
 pub mod state_machine;
+#[cfg(test)]
+mod test;
 
 use serde::{Deserialize, Serialize};
 use xkeysym::Keysym as InnerKeysym;
@@ -37,6 +39,11 @@ impl Keysym {
         self.0.key_char()
     }
 }
+impl From<InnerKeysym> for Keysym {
+	fn from(iks: InnerKeysym) -> Self {
+		Keysym(iks)
+	}
+}
 
 impl Not for Keysym {
     type Output = Self;
@@ -49,7 +56,7 @@ impl Type for Keysym {
     const SIGNATURE: &'static Signature = u32::SIGNATURE;
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Default)]
 #[repr(transparent)]
 pub struct ModMask(pub InnerKeysym);
 
@@ -57,6 +64,9 @@ impl ModMask {
     fn is_empty(&self) -> bool {
         self.0.raw() == 0
     }
+		fn empty() -> Self {
+			ModMask(InnerKeysym::from(0))
+		}
 }
 
 impl BitAnd<Self> for ModMask {
@@ -69,6 +79,12 @@ impl BitAnd<Keysym> for ModMask {
     type Output = Self;
     fn bitand(self, rhs: Keysym) -> ModMask {
         ModMask((self.0.raw() & rhs.0.raw()).into())
+    }
+}
+impl BitOr<Keysym> for ModMask {
+		type Output = ModMask;
+    fn bitor(self, rhs: Keysym) -> ModMask {
+        ModMask((self.0.raw() | rhs.0.raw()).into())
     }
 }
 impl BitOrAssign<Keysym> for ModMask {

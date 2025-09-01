@@ -22,7 +22,7 @@ use std::{cmp::Ordering, sync::mpsc::SyncSender};
 
 /// A keystroke struct represents a combination of modifiers and key to be pressed in order to
 /// trigger a [`KeyEvent`] signal to the AT.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Keystroke {
     /// Mask of modifiers that must be simultaniously pressed in order for the `keysym` field to
     /// trigger a send over to the AT.
@@ -32,7 +32,7 @@ pub struct Keystroke {
 }
 
 /// The primary holder of state for all keybindings in the daemon.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct State {
     /// When set to false, clear all other fields and reset.
     /// Without this flag active, you will always recieve `KeyEvent::ProcessNormally`.
@@ -68,7 +68,7 @@ pub struct State {
 }
 
 /// A key event accepted by an on-bus AT.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct KeyEvent {
     /// If it was a release event
     release: bool,
@@ -83,7 +83,17 @@ pub struct KeyEvent {
     /// TODO: how to caluclate?
     keycode: u16,
 }
+#[cfg(test)]
+impl KeyEvent {
+	/// Create a new `KeyEvent`; restricted to `test` mode only!
+	pub fn new(release: bool, state: ModMask, keysym: Key, unichar: Option<char>, keycode: u16) -> Self {
+		KeyEvent {
+			release, state, keysym, unichar, keycode
+		}
+	}
+}
 
+#[derive(Debug, PartialEq, Eq)]
 /// The action te perform based on the state of the keyboard handler
 pub enum KeyEventType {
     /// Swallow the event; do not pass to AT, nor process as part of the key handling of the
@@ -98,7 +108,8 @@ pub enum KeyEventType {
 }
 
 impl State {
-    fn process(&mut self, key: Key, release: bool) -> KeyEventType {
+		/// Process a single event, and produce an enum of behaviours for the compositor to implement.
+    pub fn process(&mut self, key: Key, release: bool) -> KeyEventType {
         if !self.has_client {
             return KeyEventType::ProcessNormally;
         }
@@ -122,7 +133,7 @@ impl State {
         let is_mod_local = self
             .keystrokes
             .iter()
-            .any(|ks| ks.modifiers & key == ks.modifiers);
+            .any(|ks| ks.modifiers | key == ks.modifiers);
         match (
             is_mod_global,
             any_pressed_mods,
@@ -132,14 +143,14 @@ impl State {
         ) {
             // a global modifier has been pressed,
             // and there are no current mods pressed
-            (true, false, false, _, false) => {
+            (true, _, _, _, false) => {
                 // add key to mask
                 self.pressed_modifiers |= key;
                 return KeyEventType::Swallow;
             }
             // a global modifier has been released
             // and there it is currently pressed
-            (true, true, true, _, true) => {
+            (true, _, _, _, true) => {
                 // remove key from mask
                 self.pressed_modifiers &= !key;
                 return KeyEventType::Swallow;
@@ -164,9 +175,10 @@ impl State {
             // is false while the item is already in the list
             (false, true, false, _, true) | (false, true, true, _, false) => {
                 return key_event;
-            }
-            _ => {}
+            },
+						(false, false, _, _, _) => {
+							unimplemented!("LOL! We don't support that!");
+						},
         }
-        todo!()
     }
 }
