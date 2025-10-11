@@ -17,8 +17,6 @@
 )]
 
 use crate::{Keysym as Key, ModMask};
-use std::ops::BitAnd;
-use std::{cmp::Ordering, sync::mpsc::SyncSender};
 
 /// A keystroke struct represents a combination of modifiers and key to be pressed in order to
 /// trigger a [`KeyEvent`] signal to the AT.
@@ -85,12 +83,31 @@ pub struct KeyEvent {
 }
 #[cfg(test)]
 impl KeyEvent {
-	/// Create a new `KeyEvent`; restricted to `test` mode only!
-	pub fn new(release: bool, state: ModMask, keysym: Key, unichar: Option<char>, keycode: u16) -> Self {
-		KeyEvent {
-			release, state, keysym, unichar, keycode
-		}
-	}
+    /// Create a new `KeyEvent`; restricted to `test` mode only!
+    ///
+    /// - `release`: whether the event is a release event or not (false for press event)
+    /// - `state`: [`ModMask`] describing the state of the keyboard (modifiers/latches/etc.) use
+    ///   `Default` impl for simple non-modified sates.
+    /// - `keysym`: which key was pressed/released
+    /// - `unichar`: if possible, provide the character which this key event would produce: `None`
+    ///   for all `release`d keys, and modifiers.
+    /// - `keycode`: raw system-dependent keycode (unused).
+    #[must_use]
+    pub fn new(
+        release: bool,
+        state: ModMask,
+        keysym: Key,
+        unichar: Option<char>,
+        keycode: u16,
+    ) -> Self {
+        KeyEvent {
+            release,
+            state,
+            keysym,
+            unichar,
+            keycode,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -108,7 +125,7 @@ pub enum KeyEventType {
 }
 
 impl State {
-		/// Process a single event, and produce an enum of behaviours for the compositor to implement.
+    /// Process a single event, and produce an enum of behaviours for the compositor to implement.
     pub fn process(&mut self, key: Key, release: bool) -> KeyEventType {
         if !self.has_client {
             return KeyEventType::ProcessNormally;
@@ -121,12 +138,6 @@ impl State {
             state: self.pressed_modifiers,
         };
         let key_event = KeyEventType::SendToAT(key_event_inner.clone());
-        if self.grab_all {
-            return key_event;
-        }
-        if self.notify_all {
-            return KeyEventType::SendToATAndProcess(key_event_inner);
-        }
         let is_mod_global = self.modifiers.contains(&key);
         let any_pressed_mods = !self.pressed_modifiers.is_empty();
         let is_already_pressed = self.pressed.contains(&key);
@@ -134,6 +145,16 @@ impl State {
             .keystrokes
             .iter()
             .any(|ks| ks.modifiers | key == ks.modifiers);
+        if self.grab_all && is_mod_global && release {
+            self.grab_all = false;
+            return key_event;
+        }
+        if self.grab_all {
+            return key_event;
+        }
+        if self.notify_all {
+            return KeyEventType::SendToATAndProcess(key_event_inner);
+        }
         match (
             is_mod_global,
             any_pressed_mods,
@@ -145,15 +166,17 @@ impl State {
             // and there are no current mods pressed
             (true, _, _, _, false) => {
                 // add key to mask
-                self.pressed_modifiers |= key;
-                return KeyEventType::Swallow;
+                //self.pressed_modifiers |= key;
+                self.grab_all = true;
+                key_event
             }
             // a global modifier has been released
             // and there it is currently pressed
             (true, _, _, _, true) => {
                 // remove key from mask
-                self.pressed_modifiers &= !key;
-                return KeyEventType::Swallow;
+                //self.pressed_modifiers &= !key;
+                self.grab_all = false;
+                key_event
             }
             // a key has been pressed (or released),
             // a global modifer is pressed, and
@@ -161,11 +184,11 @@ impl State {
             // released, or it is not part of the pressed keys and is being pressed)
             (false, true, false, _, false) => {
                 self.pressed.push(key);
-                return key_event;
+                key_event
             }
             (false, true, true, _, true) => {
                 self.pressed.retain(|k| *k != key);
-                return key_event;
+                key_event
             }
             // repeat keys while global grab is on;
             // it is up to the AT how to deal with such events, but no modification of the state
@@ -173,12 +196,10 @@ impl State {
             //
             // i.e. the release is true while the item is not in the pressed keys, or the release
             // is false while the item is already in the list
-            (false, true, false, _, true) | (false, true, true, _, false) => {
-                return key_event;
-            },
-						(false, false, _, _, _) => {
-							unimplemented!("LOL! We don't support that!");
-						},
+            (false, false, false, false, _) => KeyEventType::ProcessNormally,
+            (false, false, _, _, _)
+            | (false, true, false, _, true)
+            | (false, true, true, _, false) => key_event,
         }
     }
 }

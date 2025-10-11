@@ -40,9 +40,9 @@ impl Keysym {
     }
 }
 impl From<InnerKeysym> for Keysym {
-	fn from(iks: InnerKeysym) -> Self {
-		Keysym(iks)
-	}
+    fn from(iks: InnerKeysym) -> Self {
+        Keysym(iks)
+    }
 }
 
 impl Not for Keysym {
@@ -61,18 +61,18 @@ impl Type for Keysym {
 pub struct ModMask(pub InnerKeysym);
 
 impl ModMask {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.0.raw() == 0
     }
-		fn empty() -> Self {
-			ModMask(InnerKeysym::from(0))
-		}
+    pub fn empty() -> Self {
+        ModMask(InnerKeysym::from(0))
+    }
 }
 
 impl BitAnd<Self> for ModMask {
     type Output = Self;
     fn bitand(self, rhs: Self) -> ModMask {
-        ModMask((self.0.raw() | rhs.0.raw()).into())
+        ModMask((self.0.raw() & rhs.0.raw()).into())
     }
 }
 impl BitAnd<Keysym> for ModMask {
@@ -82,7 +82,7 @@ impl BitAnd<Keysym> for ModMask {
     }
 }
 impl BitOr<Keysym> for ModMask {
-		type Output = ModMask;
+    type Output = ModMask;
     fn bitor(self, rhs: Keysym) -> ModMask {
         ModMask((self.0.raw() | rhs.0.raw()).into())
     }
